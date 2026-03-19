@@ -1,2 +1,13 @@
+# Security (NEVER upload your token)
 .env
-scores.json
+
+# Bot Data (Don't upload the save file, or your cloud host will overwrite it)
+data/scores.json
+
+# Python Cache (Auto-generated junk)
+__pycache__/
+*.pyc
+*/__pycache__/
+
+# OS Junk (Just in case you are on a Mac)
+.DS_Store
