@@ -81,40 +81,65 @@ async def start_splash_game(client, message, scores, save_scores):
     
     def check(m):
         return m.author != client.user and m.channel == message.channel
+    
+    # === SCORING HELPER ===
+    # This prevents you from having to copy-paste the dictionary logic 3 times!
+    def add_points(user_id, amount):
+        guild_id = str(message.guild.id) if message.guild else "DMs"
+        uid = str(user_id)
         
-    # === PHASE 1: CHAMPION ===
+        if guild_id not in scores: scores[guild_id] = {}
+        if uid not in scores[guild_id]: scores[guild_id][uid] = {}
+        if "splash" not in scores[guild_id][uid]: scores[guild_id][uid]["splash"] = 0
+        
+        scores[guild_id][uid]["splash"] += amount
+        save_scores(scores)
+
+    # === PHASE 1: CHAMPION OR DIRECT SKIN ===
     try:
         while True: 
             guess_msg = await client.wait_for('message', check=check, timeout=15.0)
             
-            if guess_msg.content == '!skip':
+            if guess_msg.content.lower() == '!skip':
                 if guess_msg.author == original_author:
-                    await message.channel.send(f"⏭️ Game skipped! The champion was **{champ_name}**.")
+                    await message.channel.send(f"⏭️ Game skipped! It was **{champ_name}** - **{skin_name}**.")
                     return 
                 else:
                     await guess_msg.reply("❌ Only the host can skip.")
                     continue 
 
-            if normalize(guess_msg.content) == normalize(champ_name):
-                await guess_msg.reply(f"✅ Correct! It is **{champ_name}**.")
-                break 
+            normalized_guess = normalize(guess_msg.content)
+            
+            # CHECK 1: Did they guess the EXACT skin immediately? (2 Points)
+            if normalized_guess == normalize(skin_name):
+                add_points(guess_msg.author.id, 2)
+                await guess_msg.reply(f"🤯 **ABSOLUTE CINEMA!** You perfectly guessed **{skin_name}** immediately! (+2 Splash Points)")
+                return # End the game completely, skipping Phase 2
+                
+            # CHECK 2: Did they guess the Champion? (1 Point)
+            elif normalized_guess == normalize(champ_name):
+                add_points(guess_msg.author.id, 1)
+                await guess_msg.reply(f"✅ Correct champion! **{champ_name}** (+1 pt). Now for the skin...")
+                break # Break the loop to start Phase 2
+                
+            # CHECK 3: Wrong guess
             else:
-                await guess_msg.add_reaction("❌")
+                asyncio.create_task(guess_msg.add_reaction("❌"))
+                
     except asyncio.TimeoutError:
-        await message.channel.send(f"⏰ Time's up! The champion was **{champ_name}**.")
+        # If they timeout in Phase 1, reveal the whole answer and end the game
+        await message.channel.send(f"⏰ Time's up! It was **{skin_name}**.")
         return
         
     # === PHASE 2: SKIN ===
     skin_list_str = "\n".join([f"- {s}" for s in all_skin_names])
-    await message.channel.send(f"Now, **guess the exact skin!**\n\n{skin_list_str}\n\nYou have **15 seconds**.")
-    
-    guessed_users = set() 
+    await message.channel.send(f"**Guess the exact skin!**\n\n{skin_list_str}\n\nYou have **15 seconds**.")
     
     try:
         while True:
             guess_msg = await client.wait_for('message', check=check, timeout=15.0)
             
-            if guess_msg.content == '!skip':
+            if guess_msg.content.lower() == '!skip':
                 if guess_msg.author == original_author:
                     await message.channel.send(f"⏭️ Game skipped! It was **{skin_name}**.")
                     return
@@ -122,27 +147,14 @@ async def start_splash_game(client, message, scores, save_scores):
                     await guess_msg.reply("❌ Only the host can skip.")
                     continue
             
-            if guess_msg.author.id in guessed_users:
-                continue 
-                
-            guessed_users.add(guess_msg.author.id)
+            # Note: The guessed_users set is completely GONE. Free-for-all spam is back!
             
-            # QOL: Use normalize() here too for skins like "K'Sante" or "PROJECT: Yi"
             if normalize(guess_msg.content) == normalize(skin_name):
-                guild_id = str(message.guild.id) if message.guild else "DMs"
-                user_id = str(guess_msg.author.id)
-                
-                # ... (Keep your existing scoring logic here) ...
-                if guild_id not in scores: scores[guild_id] = {}
-                if user_id not in scores[guild_id]: scores[guild_id][user_id] = {}
-                if "splash" not in scores[guild_id][user_id]: scores[guild_id][user_id]["splash"] = 0
-                scores[guild_id][user_id]["splash"] += 1
-                save_scores(scores)
-                
-                await guess_msg.reply(f"🎉 **BULLSEYE!** You guessed **{skin_name}**.")
+                add_points(guess_msg.author.id, 1)
+                await guess_msg.reply(f"🎉 **BULLSEYE!** You guessed **{skin_name}** (+1 pt).")
                 break
             else:
-                await guess_msg.add_reaction("❌")
+                asyncio.create_task(guess_msg.add_reaction("❌"))
                 
     except asyncio.TimeoutError:
         await message.channel.send(f"⏰ Time's up! The correct skin was **{skin_name}**.")

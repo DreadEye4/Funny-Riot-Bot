@@ -74,10 +74,13 @@ async def start_icon_game(client, message, scores, save_scores):
         return m.author != client.user and m.channel == message.channel
 
     try:
+        # We completely removed the user_cooldowns dictionary!
         while True:
+            # This pulls the next message directly from Discord's chronological queue
             guess_msg = await client.wait_for('message', check=check, timeout=15.0)
             
-            if guess_msg.content == '!skip':
+            # 1. Check for Skip
+            if guess_msg.content.lower() == '!skip':
                 if guess_msg.author == original_author:
                     await message.channel.send(f"⏭️ Game skipped! It was **{champ_name}**.")
                     return
@@ -85,11 +88,12 @@ async def start_icon_game(client, message, scores, save_scores):
                     await guess_msg.reply("❌ Only the host can skip.")
                     continue
 
+            # 2. Check for the Winner
             if normalize(guess_msg.content) == normalize(champ_name):
                 guild_id = str(message.guild.id) if message.guild else "DMs"
                 user_id = str(guess_msg.author.id)
                 
-                # Scoring for "icon"
+                # Scoring
                 if guild_id not in scores: scores[guild_id] = {}
                 if user_id not in scores[guild_id]: scores[guild_id][user_id] = {}
                 if "icon" not in scores[guild_id][user_id]: scores[guild_id][user_id]["icon"] = 0
@@ -98,9 +102,12 @@ async def start_icon_game(client, message, scores, save_scores):
                 save_scores(scores)
                 
                 await guess_msg.reply(f"🎉 **Correct!** It was **{champ_name}**. +1 Icon point.")
-                break
+                break # This stops the loop, ignoring any remaining spam in the queue
+                
+            # 3. Handle Wrong Guesses
             else:
-                await guess_msg.add_reaction("❌")
+                # FIRE AND FORGET! The loop instantly moves to the next queued message.
+                asyncio.create_task(guess_msg.add_reaction("❌"))
                 
     except asyncio.TimeoutError:
         await message.channel.send(f"⏰ Time's up! The champion was **{champ_name}**.")

@@ -49,41 +49,84 @@ async def on_ready():
 async def on_message(message):
     if message.author == client.user: return
 
-    # Update Help to show !i
-    if message.content in ['!help', '!h']:
+    user_command = message.content.lower()
+
+    # Update Help to show !i and !l
+    if user_command in ['!help', '!h']:
         embed = discord.Embed(title="💀 Hardstuck | Commands", color=discord.Color.green())
         embed.add_field(name="!s", value="Splash Art Trivia", inline=True)
         embed.add_field(name="!i", value="Blurry Icon Trivia", inline=True)
-        embed.add_field(name="!skip", value="Skips the current game (Only the person who started it can skip).", inline=False)
-        embed.add_field(name="!stat", value="Check your scores", inline=True)
-        embed.add_field(name="!h / !help", value="Show this useless menu.", inline=False)
+        embed.add_field(name="!stat [@user]", value="Check your (or someone else's) scores", inline=False)
+        embed.add_field(name="!l", value="Server Leaderboard", inline=True)
+        embed.add_field(name="!skip", value="Skips the current game (Host only).", inline=False)
         await message.channel.send(embed=embed)
         return
 
-    # Update Stats to show both
-    if message.content == '!stat':
+    # --- FEATURE 1: LEADERBOARD ---
+    if user_command == '!l':
+        if not message.guild:
+            await message.channel.send("Leaderboards are only available in servers!")
+            return
+            
+        guild_id = str(message.guild.id)
+        guild_scores = scores.get(guild_id, {})
+        
+        # Sort users, filtering out people with 0 points
+        splash_top = sorted(
+            [(uid, data.get('splash', 0)) for uid, data in guild_scores.items() if data.get('splash', 0) > 0],
+            key=lambda x: x[1], 
+            reverse=True
+        )[:5] # Grabs the top 5
+        
+        icon_top = sorted(
+            [(uid, data.get('icon', 0)) for uid, data in guild_scores.items() if data.get('icon', 0) > 0],
+            key=lambda x: x[1], 
+            reverse=True
+        )[:5] # Grabs the top 5
+        
+        embed = discord.Embed(title=f"🏆 {message.guild.name} | Leaderboards", color=discord.Color.gold())
+        
+        # Format the text (using <@id> tags them without actually sending a ping notification)
+        splash_text = "\n".join([f"**{i+1}.** <@{uid}> - {score}" for i, (uid, score) in enumerate(splash_top)])
+        icon_text = "\n".join([f"**{i+1}.** <@{uid}> - {score}" for i, (uid, score) in enumerate(icon_top)])
+        
+        embed.add_field(name="🖼️ Top Splashers", value=splash_text if splash_text else "No points yet.", inline=True)
+        embed.add_field(name="🔍 Top Blurry Icons", value=icon_text if icon_text else "No points yet.", inline=True)
+        
+        await message.channel.send(embed=embed)
+        return
+
+    # --- FEATURE 2: TARGETED STATS ---
+    # Change == to .startswith() so it catches "!stat @username"
+    if user_command.startswith('!stat'):
         guild_id = str(message.guild.id) if message.guild else "DMs"
-        user_id = str(message.author.id)
+        
+        # If they mentioned someone, check that person. Otherwise, check themselves.
+        if message.mentions:
+            target_user = message.mentions[0]
+        else:
+            target_user = message.author
+            
+        user_id = str(target_user.id)
         user_data = scores.get(guild_id, {}).get(user_id, {})
         
         s_score = user_data.get("splash", 0)
         i_score = user_data.get("icon", 0)
         
         await message.channel.send(
-            f"📊 {message.author.mention}'s Waste of Time:\n"
+            f"📊 {target_user.mention}'s Waste of Time:\n"
             f"🖼️ **Splash Art:** {s_score}\n"
             f"🔍 **Blurry Icons:** {i_score}"
         )
         return
 
     # --- SHARED GAME HANDLER ---
-    # This logic checks if ANY game is running before starting a new one
-    if message.content in ['!s', '!i']:
+    if user_command in ['!s', '!i']:
         channel_id = message.channel.id
-        game_type = "splash" if message.content == '!s' else "icon"
+        # FIXED: Use user_command here so case-insensitivity actually works!
+        game_type = "splash" if user_command == '!s' else "icon"
         current_games = active_games.get(channel_id, set())
 
-        # If ANY game is in the set, and concurrency is off, block it.
         if not ALLOW_CONCURRENT_GAMES and len(current_games) > 0:
             await message.channel.send("⏳ A game is already running! Finish it first.")
             return
@@ -103,5 +146,6 @@ async def on_message(message):
         finally:
             active_games[channel_id].discard(game_type)
 
+# --- RUN BOT ---
 TOKEN = os.getenv('DISCORD_TOKEN')
 client.run(TOKEN)
